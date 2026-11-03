@@ -594,7 +594,8 @@ function tableX() {
     const gap = c => {
       const part = rows.filter(r => r[NAME_COL] !== "(Agency total)" && r[c] != null)
       const tot = rows.find(r => r[NAME_COL] === "(Agency total)")
-      return tot && tot[c] != null && part.length ? tot[c] - d3.sum(part, r => r[c]) : null
+      // rounded to the data's 4 decimals: adding up staff and dollar amounts leaves float noise (about 1e-8), which is 0
+      return tot && tot[c] != null && part.length ? Math.round((tot[c] - d3.sum(part, r => r[c])) * 1e4) / 1e4 || 0 : null
     }
     const g = {[NAME_COL]: "(Agency total minus components)", [cLo]: gap(cLo), [cHi]: gap(cHi), lt1: {}}
     if (g[cLo] || g[cHi]) rows.push(g)
@@ -827,7 +828,7 @@ NOTES = [
 - **Counts and dollar amounts** are added up for the government total. **Medians, averages, day counts and percentages** are not: pick an agency, or compare agencies in the table.
 - **Right chart**: how many agencies (or components) report a value each year, to show where the data is thin before comparing.
 - **Agency totals and component numbers** come from foia.gov's API (the team repository's component table). Where an agency reported the same component twice in one table, the two entries are added up, as foia.gov does.
-- **"(Agency total minus components)"** in the table, shown when it is not 0. Components add up to the agency total in all but 20 of the 482 agency-years with components. In 7 of them foia.gov has numbers it links to no component (e.g. OPM FY2017: 7,550 requests received); in the other 13 foia.gov's own total and its components disagree (e.g. GSA FY2016's total is twice its components).
+- **"(Agency total minus components)"** in the table, shown when it is not 0. Components add up to the agency total in all but 20 of the 482 agency-years with components. In 7 of them foia.gov has numbers it links to no component (e.g. OPM FY2017: 7,550 requests received); in the other 13 foia.gov's own total and its components disagree (e.g. GSA FY2016: its totals for complex and expedited requests are exactly twice its components).
 
 **For the client to decide:** which measures to feature.`]
 ```
