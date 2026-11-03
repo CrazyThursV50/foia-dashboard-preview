@@ -9,7 +9,7 @@ A temporary preview of the BU Spark! DS 701 prototype dashboard for MuckRock's D
 - `index.qmd`, `styles.css`, `assets/`, `_quarto.yml`: the dashboard source (Quarto dashboard with Observable JS charts).
 - `prep.py`, `column_mapping.csv`, `requirements.txt`: build `data/foia.json` from the team repository's component table.
 - `serve.py`: local preview server.
-- `tests/`: browser checks (Playwright): `check_numbers.py` compares the numbers on the page with the component table (and first checks its agency totals against the agency-level table), `check_edges.py` opens every view under unusual settings, `check_gaps.py` checks the "(Agency total minus components)" row on known cases.
+- `tests/`: browser checks (Playwright): `check_numbers.py` (questions 1, 3, 5, 6) and `check_numbers_more.py` (questions 2, 4 and Explore) compare the numbers on the page with the component table (the first also checks its agency totals against the agency-level table), `check_edges.py` opens every view under unusual settings, `check_gaps.py` checks the "(Agency total minus components)" row on known cases.
 - `deploy/dashboard.yml`: draft GitHub Actions workflow for the team repository (monthly rebuild and GitHub Pages).
 
 ## Data
