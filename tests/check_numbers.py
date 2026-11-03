@@ -2,7 +2,9 @@
 
 Opens the page (needs the local server: python serve.py), picks agencies / components / years,
 reads the "Chart data" tables of questions 1, 3, 5 and 6, and compares every cell with numbers
-computed here straight from the two source CSVs (not from data/foia.json).
+computed here straight from the component table (not from data/foia.json).
+Before that, the agency totals used here are compared with the agency-level table (foia.gov's CSV export),
+which the page does not read.
 
 Usage: python tests/check_numbers.py [webkit|chromium] [component table]
 (the component table defaults to the one in the team repo; pass the one prep.py was given if it differs)
@@ -25,35 +27,37 @@ def num(s):
 
 
 # ---- source tables -> one long frame: level, Agency, Component, FY, measures ----
-a = pd.read_csv(R / "agency_level/FOIA_agency_FY2008-2025.csv", dtype=str, keep_default_na=False)
 COMPONENTS = Path(sys.argv[2]) if len(sys.argv) > 2 else R / "component_level/component_master_no_03_06_11.csv"
 c = pd.read_csv(COMPONENTS, dtype=str, keep_default_na=False)
+a = c[c["Row Type"] == "agency_overall"]
 # a component's second entry in a table counts toward it (all the measures used here are counts or amounts);
 # rows linked to no component and the excluded row are not components
 c = c[c["Row Type"].isin(["component", "second_entry"]) & (c["Exclude From Component Sum"] == "") & (c.Component != "")]
-AG = pd.DataFrame({"level": "agency", "Agency": a.Agency, "Component": "", "Key": "", "Name": "", "FY": a["Fiscal Year"].astype(int),
-    "received": num(a["requests__Number of Requests Received in Fiscal Year"]),
-    "processed": num(a["requests__Number of Requests Processed in Fiscal Year"]),
-    "backlog": num(a["backlog__Number of Backlogged Requests as of End of Fiscal Year"]),
-    "last_backlog": num(a["backlog_requests_vs_prev_year__Number of Backlogged Requests as of End of the Fiscal Year from Previous Annual Report"]),
-    "staff": num(a['personnel__Total Number of "Full-Time FOIA Staff"']),
-    "cost": num(a["costs_fees__Total Costs"]),
-    "affirmed": num(a["appeals_disposition__Number Affirmed on Appeal"]),
-    "partial": num(a["appeals_disposition__Number Partially Affirmed & Partially Reversed/Remanded on Appeal"]),
-    "reversed": num(a["appeals_disposition__Number Completely Reversed/Remanded on Appeal"]),
-    "other": num(a["appeals_disposition__Number of Appeals Closed for Other Reasons"])})
-CO = pd.DataFrame({"level": "component", "Agency": c.Agency, "Component": c.Component, "Name": c["Component Name"], "FY": c["Fiscal Year"].astype(int),
-    "received": num(c["01_Requests__ProcessingStatisticsReceivedQuantity"]),
-    "processed": num(c["01_Requests__ProcessingStatisticsProcessedQuantity"]),
-    "backlog": num(c["26_Backlog__BackloggedRequestQuantity"]),
-    "last_backlog": num(c["30_ComparisonsRequestsBacklogged__BacklogLastYearQuantity"]),
-    "staff": num(c["22_Personnel__TotalFullTimeStaffQuantity"]),
-    "cost": num(c["23_Costs__TotalCostAmount"]),
-    "affirmed": num(c["08_AppealsDisposition__AppealDispositionAffirmedQuantity"]),
-    "partial": num(c["08_AppealsDisposition__AppealDispositionPartialQuantity"]),
-    "reversed": num(c["08_AppealsDisposition__AppealDispositionReversedQuantity"]),
-    "other": num(c["08_AppealsDisposition__AppealDispositionOtherQuantity"])})
-MEASURES = ["received", "processed", "backlog", "last_backlog", "staff", "cost", "affirmed", "partial", "reversed", "other"]
+# measure -> (component-table column, agency-level-table column)
+COLS = {"received": ("01_Requests__ProcessingStatisticsReceivedQuantity", "requests__Number of Requests Received in Fiscal Year"),
+    "processed": ("01_Requests__ProcessingStatisticsProcessedQuantity", "requests__Number of Requests Processed in Fiscal Year"),
+    "backlog": ("26_Backlog__BackloggedRequestQuantity", "backlog__Number of Backlogged Requests as of End of Fiscal Year"),
+    "last_backlog": ("30_ComparisonsRequestsBacklogged__BacklogLastYearQuantity",
+                     "backlog_requests_vs_prev_year__Number of Backlogged Requests as of End of the Fiscal Year from Previous Annual Report"),
+    "staff": ("22_Personnel__TotalFullTimeStaffQuantity", 'personnel__Total Number of "Full-Time FOIA Staff"'),
+    "cost": ("23_Costs__TotalCostAmount", "costs_fees__Total Costs"),
+    "affirmed": ("08_AppealsDisposition__AppealDispositionAffirmedQuantity", "appeals_disposition__Number Affirmed on Appeal"),
+    "partial": ("08_AppealsDisposition__AppealDispositionPartialQuantity",
+                "appeals_disposition__Number Partially Affirmed & Partially Reversed/Remanded on Appeal"),
+    "reversed": ("08_AppealsDisposition__AppealDispositionReversedQuantity", "appeals_disposition__Number Completely Reversed/Remanded on Appeal"),
+    "other": ("08_AppealsDisposition__AppealDispositionOtherQuantity", "appeals_disposition__Number of Appeals Closed for Other Reasons")}
+MEASURES = list(COLS)
+frame = lambda d, level, ids, k: pd.DataFrame({"level": level, **ids, "FY": d["Fiscal Year"].astype(int), **{m: num(d[v[k]]) for m, v in COLS.items()}})
+AG = frame(a, "agency", {"Agency": a.Agency, "Component": "", "Key": "", "Name": ""}, 0)
+CO = frame(c, "component", {"Agency": c.Agency, "Component": c.Component, "Name": c["Component Name"]}, 0)
+# the agency totals used here against the agency-level table, which the page does not read: they must agree
+csv = pd.read_csv(R / "agency_level/FOIA_agency_FY2008-2025.csv", dtype=str, keep_default_na=False)
+both = AG.merge(frame(csv, "agency", {"Agency": csv.Agency}, 1), on=["Agency", "FY"], how="outer", suffixes=("", "_csv"), indicator=True)
+assert len(both) == len(AG) == len(csv) and (both._merge == "both").all(), "agency-years differ from the agency-level table"
+off = [(r.Agency, r.FY, m) for r in both.itertuples() for m in MEASURES
+       if not (pd.isna(getattr(r, m)) and pd.isna(getattr(r, m + "_csv")) or getattr(r, m) == getattr(r, m + "_csv"))]
+assert not off, f"agency totals differ from the agency-level table: {off[:5]}"
+print(f"agency totals vs agency-level table: {len(both) * len(MEASURES)} values, 0 different")
 CO = CO.groupby(["level", "Agency", "Component", "Name", "FY"], as_index=False)[MEASURES].sum(min_count=1)
 shared = CO.groupby(["Agency", "Component"]).Name.nunique()
 shared = set(shared[shared > 1].index)  # one code used for two components (USPS "PS"): told apart by name

@@ -1,6 +1,6 @@
 # Draft GitHub Actions workflow: rebuild the dashboard data, render it, publish to GitHub Pages.
 # To use it, copy to .github/workflows/dashboard.yml at the repository root.
-# Paths assume the dashboard lives in fa26/dashboard/ and the data in fa26/dataset/agency_level/ and fa26/dataset/component_level/.
+# Paths assume the dashboard lives in fa26/dashboard/ and the data in fa26/dataset/component_level/.
 name: Build and publish dashboard
 
 on:
@@ -30,16 +30,13 @@ jobs:
       - name: Install Python packages
         run: pip install -r fa26/dashboard/requirements.txt
 
-      # Not yet: download new reports from foia.gov and rebuild the merged table, e.g.
-      #   pip install playwright && playwright install --with-deps chromium
-      #   python fa26/scripts/foia_downloader.py --year <recent years> --headless
-      #   python fa26/scripts/merge_by_year.py --data <download folder>
-      # Until then the build uses the agency and component tables committed in the repository.
+      # Not yet: download new annual reports from the foia.gov API and rebuild the component table
+      # (the build script is not in the repository yet).
+      # Until then the build uses the component table committed in the repository.
 
       - name: Build the dashboard data
         run: >
           python fa26/dashboard/prep.py
-          --agency fa26/dataset/agency_level/FOIA_agency_FY2008-2025.csv
           --components fa26/dataset/component_level/component_master_no_03_06_11.csv
 
       - uses: quarto-dev/quarto-actions/setup@v2

@@ -7,21 +7,18 @@ A temporary preview of the BU Spark! DS 701 prototype dashboard for MuckRock's D
 ## What is here
 - `docs/`: the built page that GitHub Pages serves (`index.html`, its libraries, and the data file `data/foia.json`).
 - `index.qmd`, `styles.css`, `assets/`, `_quarto.yml`: the dashboard source (Quarto dashboard with Observable JS charts).
-- `prep.py`, `column_mapping.csv`, `requirements.txt`: build `data/foia.json` from the team repository's tables.
+- `prep.py`, `column_mapping.csv`, `requirements.txt`: build `data/foia.json` from the team repository's component table.
 - `serve.py`: local preview server.
-- `tests/`: browser checks (Playwright): `check_numbers.py` compares the numbers on the page with the source tables, `check_edges.py` opens every view under unusual settings.
+- `tests/`: browser checks (Playwright): `check_numbers.py` compares the numbers on the page with the component table (and first checks its agency totals against the agency-level table), `check_edges.py` opens every view under unusual settings.
 - `deploy/dashboard.yml`: draft GitHub Actions workflow for the team repository (monthly rebuild and GitHub Pages).
 
 ## Data
-foia.gov annual reports, from the tables in the team repository:
-- agency level: `fa26/dataset/agency_level/FOIA_agency_FY2008-2025.csv`
-- component level: `fa26/dataset/component_level/component_master_no_03_06_11.csv` (rebuilt from the foia.gov API in PR #25, not merged yet)
+foia.gov annual reports, from one table in the team repository: `fa26/dataset/component_level/component_master_no_03_06_11.csv` (rebuilt from the foia.gov API in PR #25, not merged yet). Agency totals are its Agency Overall rows; components are its component rows.
 
 ## Rebuild
 ```
 pip install -r requirements.txt
-python prep.py --agency <team repo>/fa26/dataset/agency_level/FOIA_agency_FY2008-2025.csv \
-               --components <team repo>/fa26/dataset/component_level/component_master_no_03_06_11.csv
+python prep.py --components <team repo>/fa26/dataset/component_level/component_master_no_03_06_11.csv
 quarto render
 rm -rf docs && cp -R _site docs && touch docs/.nojekyll
 ```

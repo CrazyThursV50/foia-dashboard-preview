@@ -4,23 +4,23 @@ Rows: one per agency per year (agency level) plus one per component per year (co
 Columns: every numeric column of the component master table (named as there, e.g.
 01_Requests__ProcessingStatisticsReceivedQuantity).
 
-Where the values come from:
-- agency rows: the agency table FOIA_agency_FY2008-2025.csv (foia.gov CSV, checked against the API).
-  Its columns are matched to the component master's columns with column_mapping.csv.
-- component rows: component_master_no_03_06_11.csv (built from the foia.gov API). A "second_entry" row (a
+Where the values come from: one table, component_master_no_03_06_11.csv (built from the foia.gov API).
+- agency rows: its "agency_overall" rows (one per agency per year).
+- component rows: its "component" rows. A "second_entry" row (a
   second entry the agency reported for the same component in one table) is added into its component: summed
   where the column can be added up, otherwise the first entry is kept. Rows marked "Exclude From Component Sum"
   and "no_component" rows (numbers foia.gov links to no component) are left out; the page shows the latter as
   the agency total minus its components.
   Components are told apart by code and name: "Key" is the code, or "code · name" where one agency uses the
   same code for two components (USPS "PS" FY2019-2024).
+Labels: foia.gov's own CSV column names, from column_mapping.csv.
 
 How values are read: commas removed; blank and N/A spellings -> null (missing, never 0);
 "<1" (less than one day) -> 0.5, and its position is listed under "lt1" so the page can show "<1".
 Receipt-date columns (text) are left out.
 
 Usage:
-    python prep.py --agency <FOIA_agency_FY2008-2025.csv> --components <component_master_no_03_06_11.csv>
+    python prep.py --components <component_master_no_03_06_11.csv>
                    [--types <data_type_map.csv>] [--mapping column_mapping.csv] [--out data]
 """
 import argparse
@@ -91,19 +91,21 @@ def label(field):
     return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", field.replace(".", " · "))
 
 
-def main(agency_csv, components_csv, types_csv, mapping_csv, out):
+def main(components_csv, types_csv, mapping_csv, out):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    agency = pd.read_csv(agency_csv, dtype=str, keep_default_na=False)
     c = pd.read_csv(components_csv, dtype=str, keep_default_na=False)
     types = pd.read_csv(types_csv, dtype=str, keep_default_na=False)
     mapping = pd.read_csv(mapping_csv, dtype=str, keep_default_na=False)
     by_no = {r["No."].zfill(2): r for _, r in types.iterrows()}
     data_cols = [x for x in c.columns if DATA_COL.match(x)]
+    agency = c[c["Row Type"] == "agency_overall"].reset_index(drop=True)
+    if agency.duplicated(["Agency", "Fiscal Year"]).any():
+        raise ValueError("more than one agency_overall row for an agency-year")
     comp = merge_second_entries(c, data_cols)
     n_a, n_c = len(agency), len(comp)
 
-    # numeric columns of the component master, each with its matching agency-table column
+    # numeric columns of the component master
     columns, values, lt1 = [], {}, {}
     for col in data_cols:
         no, field = col.split("_", 1)[0], col.split("__", 1)[1]
@@ -111,16 +113,14 @@ def main(agency_csv, components_csv, types_csv, mapping_csv, out):
             continue
         t = by_no[no]
         hit = mapping[(mapping.table == "foia-" + t["Official file name (foia-*.csv)"]) & (mapping.xml_col == field)]
-        names = [t["Column prefix in FOIA_agency_FY2008-2025.csv"] + x for x in hit.csv_col]
-        names = [x for x in names if x in agency.columns]
-        if len(names) != 1:
-            raise ValueError(f"no single agency-table column for {col}: {names}")
+        if len(hit) != 1:
+            raise ValueError(f"no single foia.gov CSV column name for {col}: {list(hit.csv_col)}")
         a_lt1, c_lt1 = [], []
-        values[col] = parse(agency[names[0]], col, a_lt1) + parse(comp[col], col, c_lt1)
+        values[col] = parse(agency[col], col, a_lt1) + parse(comp[col], col, c_lt1)
         if a_lt1 or c_lt1:
             lt1[col] = a_lt1 + [n_a + i for i in c_lt1]
         # label: foia.gov's own CSV column name (e.g. "Number of Requests Received in Fiscal Year"); field: the XML name
-        columns.append({"key": col, "no": no, "type": t["foia.gov data type"], "label": hit.csv_col.iloc[0] if len(hit) == 1 else label(field),
+        columns.append({"key": col, "no": no, "type": t["foia.gov data type"], "label": hit.csv_col.iloc[0],
                         "field": label(field), "addable": not NOT_ADDABLE.search(field)})
 
     fy = [int(x) for x in agency["Fiscal Year"]] + [int(x) for x in comp["Fiscal Year"]]
@@ -151,11 +151,10 @@ def main(agency_csv, components_csv, types_csv, mapping_csv, out):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Build the dashboard's data file.")
-    ap.add_argument("--agency", required=True, help="fa26/dataset/agency_level/FOIA_agency_FY2008-2025.csv")
     ap.add_argument("--components", required=True, help="fa26/dataset/component_level/component_master_no_03_06_11.csv")
-    ap.add_argument("--types", help="fa26/dataset/data_type_map.csv (default: the folder above the agency table's folder)")
-    ap.add_argument("--mapping", default=str(HERE / "column_mapping.csv"), help="agency-table column <-> component column")
+    ap.add_argument("--types", help="fa26/dataset/data_type_map.csv (default: the folder above the component table's folder)")
+    ap.add_argument("--mapping", default=str(HERE / "column_mapping.csv"), help="foia.gov CSV column name for each component-table column")
     ap.add_argument("--out", default=str(HERE / "data"), help="output folder (default: data/ next to this script)")
     args = ap.parse_args()
-    types = args.types or str(Path(args.agency).resolve().parent.parent / "data_type_map.csv")
-    main(args.agency, args.components, types, args.mapping, args.out)
+    types = args.types or str(Path(args.components).resolve().parent.parent / "data_type_map.csv")
+    main(args.components, types, args.mapping, args.out)
