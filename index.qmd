@@ -228,9 +228,9 @@ function q2data() {
   const rows = pick(Q2).filter(d => d.FY === hi)
   const dist = ["Simple", "Complex", "Expedited"].flatMap(track => {
     const r = rows.filter(d => d.track === track)
-    const counts = B.map(b => Object({track, range: b.label, n: d3.sum(r, d => d[b.col])}))
+    const counts = B.map(b => Object({track, range: b.label, n: total(r, d => d[b.col])}))  // total(): blank stays blank, not 0
     const tot = d3.sum(counts, d => d.n)
-    return counts.map(c => Object.assign(c, {share: tot ? c.n / tot : null}))
+    return counts.map(c => Object.assign(c, {share: tot && c.n != null ? c.n / tot : null}))
   })
   if (agency === TOTAL) {
     // medians cannot be added: the 15 agencies that processed the most requests, side by side (alphabetical)
@@ -369,7 +369,7 @@ function table3() {
 function q4data() {
   // base = the outcome categories added up, not the reported "Total" (wrong for 4 agencies in FY2025)
   const share = d3.rollups(pick(Q4D), v => {
-    const tot = d3.sum(v, d => d3.sum(OUTCOMES, c => d[c]))
+    const tot = total(v, d => OUTCOMES.some(c => d[c] != null) ? d3.sum(OUTCOMES, c => d[c]) : null)  // blank stays blank, not 0
     const groups = d3.rollup(OUTCOMES, cs => d3.sum(cs, c => d3.sum(v, d => d[c])), c => MAIN_OUTCOMES.includes(c) ? c : "All other")
     return [...groups].map(([cat, n]) => Object({cat, n, tot, share: tot ? n / tot : null}))
   }, d => d.FY).flatMap(([FY, arr]) => arr.map(o => Object.assign({FY}, o)))
@@ -642,13 +642,22 @@ REF_COLOR = "#9aa0a6"
 hasRef = k => REF_NAME != null && (k.pct || k.q === 6)
 // one series per entity: the current selection first, then the "Compare with" list, then the reference
 function compareSeries(k) {
-  const groups = [{name: selName, rows: pick(ROWS)}, ...compareWith.map(key => Object({name: ENT.get(key).short, rows: entityRows(key)}))]
+  const groups = [{name: compareName.sel, rows: pick(ROWS)}, ...compareList.map(key => Object({name: compareName.of(key), rows: entityRows(key)}))]
   if (hasRef(k)) groups.push({name: REF_NAME, ref: true,
     rows: ROWS.filter(d => d.FY >= lo && d.FY <= hi && d.level === "agency" && (comp === ALL || d.Agency === agency))})
   return groups.flatMap(g => d3.groups(g.rows, d => d.FY).map(([FY, v]) => Object({FY, name: g.name, ref: !!g.ref, value: k.f(v)})).filter(d => d.value != null))
     .sort((a, b) => a.FY - b.FY)
 }
-compareNames = [selName, ...compareWith.map(key => ENT.get(key).short)]
+// what is compared, without the selection itself. Series are told apart by name, and several agencies have a component
+// of the same name (e.g. an "OIG"), so a name that appears twice gets its agency
+selKey = agency === TOTAL ? "" : comp === ALL ? `A|${agency}` : `C|${agency}|${comp}`
+compareList = compareWith.filter(k => k !== selKey)
+compareName = (() => {
+  const shorts = [selName, ...compareList.map(k => ENT.get(k).short)]
+  const tag = (a, s) => shorts.filter(x => x === s).length > 1 ? `${a} › ${(s.match(/\(([^)]+)\)$/) || [null, s])[1]}` : s
+  return {sel: tag(agency, selName), of: k => tag(k.split("|")[1], ENT.get(k).short)}
+})()
+compareNames = [compareName.sel, ...compareList.map(compareName.of)]
 seriesNames = k => [...compareNames, ...(hasRef(k) ? [REF_NAME] : [])]
 function compareFig(k, w, h, legend) {
   const s = compareSeries(k), names = seriesNames(k)
@@ -925,7 +934,8 @@ viewof compareWith = {
     chips.replaceChildren(...wrap.value.map(k => {
       const x = html`<button type="button" title="Remove">×</button>`
       x.onclick = () => { wrap.value = wrap.value.filter(v => v !== k); if (pending === k) pending = null; draw(); changed() }
-      return html`<span class="chip">${ENT.get(k).short}${x}</span>`
+      const twin = wrap.value.some(v => v !== k && ENT.get(v).short === ENT.get(k).short)  // same name at two agencies
+      return html`<span class="chip">${twin ? ENT.get(k).label : ENT.get(k).short}${x}</span>`
     }))
     hint.textContent = wrap.value.length >= 5 ? "Up to 5: remove one (×) to add another." : "Choosing adds it to the comparison; × removes it."
   }
