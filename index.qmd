@@ -165,12 +165,14 @@ function trend({data, y, z = null, names = null, colors = [BRAND], yopt = {}, ti
       y: {domain: nm, label: null}, color,
       marks: [Plot.barX(rows, {x: y, y: z || (() => nm[0]), fill: z || colors[0], tip: true, title}), Plot.ruleX([0])]})
   }
+  const known = data.filter(d => d[y] != null && !Number.isNaN(d[y]))
+  if (!known.length) return note(`Nothing reported for FY${lo}–FY${hi}.`)
   const solid = withGaps(dashed ? data.filter(d => !dashed(d)) : data, y, z)
   return Plot.plot({height: CH, width: PAIR, marginLeft: 60, x: yearX, y: Object.assign({grid: true}, yopt), color,
     marks: [...rules,
             Plot.lineY(solid, {x: "FY", y, stroke: z || colors[0], strokeWidth: 2, clip}),
             ...(dashed ? [Plot.lineY(withGaps(data.filter(dashed), y, z), {x: "FY", y, stroke: z || colors[0], strokeWidth: 2, strokeDasharray: "5,3", clip})] : []),
-            Plot.dot(data, {x: "FY", y, fill: z || colors[0], r: 3, tip: true, title, clip})]})
+            Plot.dot(known, {x: "FY", y, fill: z || colors[0], r: 3, tip: true, title, clip})]})
 }
 plainTable = (rows, format = {}, first = "FY") => Inputs.table(rows, {layout: "auto", maxHeight: TH - 60, sort: first,
   columns: Object.keys(rows[0] || {}).filter(k => k !== "lt1"), format: Object.assign({FY: String}, format)})
@@ -428,6 +430,10 @@ function q5data() {
 }
 function chart5() {
   const {rate, parts} = q5data()
+  // nothing reported is not a 0% rate: at some agencies one office decides every appeal (DOJ: OIP), so other components report none
+  if (!parts.some(d => d.n != null)) return pair(
+    figure("How often the first decision is reversed", note(`No appeals reported for this selection, ${lo === hi ? `FY${hi}` : `FY${lo}–FY${hi}`}. At some agencies one office decides all appeals, so other components report none.`)),
+    figure("Appeal outcomes (count)", note("Nothing to show.")))
   const left = trend({data: rate, y: "rate", yopt: {label: "Reversal rate (%)", percent: true, domain: [0, 100]},  // percent: true, so the domain is in percent
     title: d => `FY${d.FY}: ${pct(d.rate)} (${fmt(d.rev)} reversed fully or partly)`})
   const right = Plot.plot({
